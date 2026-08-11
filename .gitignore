@@ -1,0 +1,16 @@
+# Mengabaikan folder environment virtual (agar tidak memberatkan server)
+venv/
+.venv/
+env/
+
+# Mengabaikan cache dari Python
+__pycache__/
+*.pyc
+
+# 🚨 SANGAT PENTING: MENGABAIKAN KUNCI RAHASIA 🚨
+.env
+.streamlit/secrets.toml
+
+# Mengabaikan file sistem bawaan OS (Mac/Windows)
+.DS_Store
+Thumbs.db
