@@ -5,11 +5,18 @@ import os
 # Menyambungkan logika dan data
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 from modules.audit_engine import run_gemini_audit
+from modules.auth_system import register_user, login_user
 from kriteria_data import DATA_PROPER
 
-# --- KONFIGURASI STATE MEMORI (TABULASI SKOR) ---
+# --- KONFIGURASI STATE MEMORI ---
 if 'skor_tabulasi' not in st.session_state:
     st.session_state.skor_tabulasi = {}
+
+if 'user_logged_in' not in st.session_state:
+    st.session_state.user_logged_in = False
+
+if 'user_info' not in st.session_state:
+    st.session_state.user_info = None
 
 # Konfigurasi Halaman (Lebih lebar & elegan)
 st.set_page_config(page_title="Sistem Asesmen PROPER Hijau", layout="wide", page_icon="🌿")
@@ -38,26 +45,22 @@ st.markdown("""
         margin-bottom: 20px;
     }
     
-    /* ========================================= */
     /* FITUR: MENGUBAH RADIO BUTTON MENJADI SCROLLABLE & STRICT 1 KOLOM */
     [data-testid="stSidebar"] [role="radiogroup"] {
-        max-height: 300px; /* Batas tinggi dinamis */
-        overflow-y: auto;  /* Munculkan scrollbar ke bawah */
-        overflow-x: hidden; /* Matikan scroll menyamping */
+        max-height: 300px;
+        overflow-y: auto;
+        overflow-x: hidden;
         padding-right: 10px;
         border-top: 1px solid #f1f5f9;
         border-bottom: 1px solid #f1f5f9;
         padding-top: 10px;
         padding-bottom: 10px;
-        
-        /* PAKSA 1 KOLOM VERTIKAL */
         display: flex !important;
         flex-direction: column !important;
         flex-wrap: nowrap !important;
-        gap: 4px; /* Jarak antar pilihan */
+        gap: 4px;
     }
     
-    /* Pastikan setiap item mengambil lebar penuh agar tidak berjejer */
     [data-testid="stSidebar"] [role="radiogroup"] label {
         width: 100% !important;
         margin-right: 0 !important;
@@ -65,8 +68,8 @@ st.markdown("""
 
     /* FITUR: MENGUBAH TABULASI SKOR MENJADI SCROLLABLE */
     .score-scroll-container {
-        max-height: 250px; /* Batas tinggi dinamis */
-        overflow-y: auto;  /* Munculkan scrollbar ke bawah */
+        max-height: 250px;
+        overflow-y: auto;
         overflow-x: hidden;
         padding-right: 10px;
         margin-bottom: 15px;
@@ -81,24 +84,13 @@ st.markdown("""
         border-bottom: none;
     }
 
-    /* Styling Scrollbar agar cantik dan modern */
-    ::-webkit-scrollbar {
-        width: 6px;
-        height: 6px;
-    }
-    ::-webkit-scrollbar-track {
-        background: transparent;
-    }
-    ::-webkit-scrollbar-thumb {
-        background: #cbd5e1;
-        border-radius: 10px;
-    }
-    ::-webkit-scrollbar-thumb:hover {
-        background: #94a3b8;
-    }
-    /* ========================================= */
+    /* Styling Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     
-    /* Kartu Hasil Penilaian (Score Card) */
+    /* Kartu Hasil Penilaian */
     .score-card-green {
         background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
         border-left: 6px solid #22c55e;
@@ -129,7 +121,6 @@ st.markdown("""
         line-height: 1;
     }
     
-    /* Efek Hover pada Tombol Utama */
     .stButton>button {
         border-radius: 8px;
         font-weight: 600;
@@ -143,20 +134,89 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+
+# ==========================================
+# GATEKEEPER: HALAMAN AUTHENTICATION (LOGIN & REGISTRASI)
+# ==========================================
+if not st.session_state.user_logged_in:
+    st.markdown('<div class="main-header">🌿 Sistem Asesmen - PROPER Hijau KLH</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Silakan masuk atau mendaftar akun untuk mengakses sistem</div>', unsafe_allow_html=True)
+    st.markdown("---")
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+
+    with col2:
+        tab_login, tab_register = st.tabs(["🔐 Masuk (Login)", "📝 Pendaftaran Akun Baru"])
+
+        # TAB LOGIN
+        with tab_login:
+            st.subheader("Login Asesor / Perusahaan")
+            email_login = st.text_input("Email", key="login_email")
+            pass_login = st.text_input("Password", type="password", key="login_pass")
+
+            if st.button("🚀 Masuk Sistem", type="primary", use_container_width=True):
+                if not email_login or not pass_login:
+                    st.warning("Mohon isi Email dan Password!")
+                else:
+                    with st.spinner("Verifikasi kredensial..."):
+                        success, msg, profile = login_user(email_login, pass_login)
+                        if success:
+                            st.session_state.user_logged_in = True
+                            st.session_state.user_info = profile
+                            st.success(msg)
+                            st.rerun()
+                        else:
+                            st.error(msg)
+
+        # TAB REGISTRASI
+        with tab_register:
+            st.subheader("Form Pendaftaran Akun Baru")
+            nama_reg = st.text_input("Nama Lengkap Pengguna", key="reg_nama")
+            pt_reg = st.text_input("Nama Perusahaan / Instansi", key="reg_pt")
+            email_reg = st.text_input("Alamat Email", key="reg_email")
+            pass_reg = st.text_input("Password Baru", type="password", key="reg_pass")
+
+            if st.button("📩 Daftar Sekarang", use_container_width=True):
+                if not nama_reg or not pt_reg or not email_reg or not pass_reg:
+                    st.warning("Semua kolom registrasi wajib diisi!")
+                else:
+                    with st.spinner("Mendaftarkan akun..."):
+                        success, msg = register_user(nama_reg, pt_reg, email_reg, pass_reg)
+                        if success:
+                            st.success(msg)
+                        else:
+                            st.error(msg)
+
+    st.stop() # Hentikan eksekusi di sini jika belum login
+
+
+# ==========================================
+# APLIKASI UTAMA (TERBUKA HANYA JIKA APPROVED)
+# ==========================================
+
 # --- HEADER APLIKASI ---
 st.markdown('<div class="main-header">🌿 Asesmen - PROPER Hijau KLH</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-header">Asisten Cerdas untuk Evaluasi Dokumen Keberlanjutan</div>', unsafe_allow_html=True)
 st.markdown("---")
 
+# --- MENU SIDEBAR: PROFIL & NAVIGASI ---
+st.sidebar.title("👤 Profil Pengguna")
+st.sidebar.info(f"**{st.session_state.user_info.get('nama')}**\n\n🏢 {st.session_state.user_info.get('nama_perusahaan')}")
 
-# --- MENU SIDEBAR: NAVIGASI BERJENJANG & JANGKAR WAKTU ---
+if st.sidebar.button("🚪 Keluar (Logout)", use_container_width=True):
+    st.session_state.user_logged_in = False
+    st.session_state.user_info = None
+    st.session_state.skor_tabulasi = {}
+    st.rerun()
+
+st.sidebar.markdown("---")
 st.sidebar.title("⚙️ Konfigurasi")
 
-# 0. JANGKAR WAKTU: Pilih Siklus Penilaian PROPER (2 Tahun Audit)
+# Pilih Siklus Penilaian PROPER
 siklus_proper = st.sidebar.selectbox(
     "🗓️ Siklus Penilaian PROPER:",
     ["2023/2024", "2024/2025", "2025/2026", "2026/2027", "2027/2028"],
-    index=2,  # Default ke 2025/2026
+    index=2,
     help="Menentukan batas kedaluwarsa dokumen dinamis (Renja, Laporan, dll)."
 )
 
@@ -167,19 +227,17 @@ st.sidebar.markdown("---")
 # 1. Pilih Jenis Dokumen
 jenis_dokumen = st.sidebar.selectbox("📂 1. Pilih Jenis Dokumen", list(DATA_PROPER.keys()))
 
-# 2. Pilih Kategori (berdasarkan Jenis Dokumen)
+# 2. Pilih Kategori
 kategori_list = list(DATA_PROPER[jenis_dokumen].keys())
 kategori = st.sidebar.selectbox("📑 2. Pilih Kategori", kategori_list)
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("**🎯 3. Pilih Kriteria Penilaian:**")
 
-# Menarik daftar pertanyaan di dalam kategori yang dipilih
 kriteria_dict = DATA_PROPER[jenis_dokumen][kategori]
 
 if not kriteria_dict:
-    st.sidebar.warning("Kriteria untuk kategori ini belum tersedia (sedang dibangun).")
-    st.info("Pilih Kategori atau Dokumen lain, atau tambahkan kriteria baru di gudang data.")
+    st.sidebar.warning("Kriteria untuk kategori ini belum tersedia.")
 else:
     pilihan_menu = list(kriteria_dict.keys()) 
     
@@ -210,46 +268,32 @@ else:
             html_scores += f'<div class="score-item">⏳ Q{no}: - <span style="color:#94a3b8;">/ {data["skor_maksimal"]}</span></div>'
             
     html_scores += '</div>'
-    
-    # Tampilkan List Tabulasi Skor ke layar Sidebar
     st.sidebar.markdown(html_scores, unsafe_allow_html=True)
-            
-    # Tampilkan Total Skor Statis di bagian paling bawah Sidebar
     st.sidebar.success(f"**TOTAL SKOR: {total_skor} / {maks_skor}**")
-
 
     # ==========================================
     # DASHBOARD UTAMA (EVALUASI)
     # ==========================================
     active_rubric = kriteria_dict[selected_no]
 
-    # Navigasi Breadcrumb
     st.caption(f"📍 **Modul Aktif:** {jenis_dokumen} ➔ {kategori} ➔ Kriteria {selected_no}")
     st.header(active_rubric['judul'])
 
-    # ==========================================
-    # MENAMPILKAN SEMUA DATA RUBRIK
-    # ==========================================
     with st.expander("📖 Lihat Panduan Penilaian & Rubrik PROPER LHK", expanded=False):
-        # Menampilkan Detail / Aspek Penilaian
         st.info(active_rubric.get('detail_ui', 'Aspek penilaian tidak tersedia.'))
-        
         st.markdown("#### 🎯 Kriteria & Parameter Sistem")
         st.markdown(f"- **Fokus Analisis AI:** {active_rubric.get('kriteria_ai', '-')}")
         st.markdown(f"- **Skor Maksimal:** `{active_rubric.get('skor_maksimal', 0.0)}`")
         
         st.markdown("#### ⚙️ Aturan Skoring & Validasi Waktu")
-        # Menampilkan rubrik_ai ke layar agar transparan
         st.warning(active_rubric.get('rubrik_ai', 'Aturan skoring tidak tersedia.'))
         
         if 'tabel_html' in active_rubric and active_rubric['tabel_html'].strip() != "":
             st.markdown("---")
             st.markdown("**📋 Format Tabel Acuan PROPER:**")
             st.markdown(active_rubric['tabel_html'], unsafe_allow_html=True)
-    # ==========================================
 
     st.markdown("### 📄 Unggah Dokumen Bukti")
-    
     uploaded_files = st.file_uploader(
         "Seret & lepas (Drag & Drop) file PDF di sini (Bisa lebih dari 1 file)", 
         type=["pdf"], 
@@ -262,24 +306,18 @@ else:
         else:
             with st.spinner(f"🔍 Mesin AI sedang memindai {len(uploaded_files)} dokumen bukti (Menerapkan Siklus {siklus_proper})..."):
                 try:
-                    # Membaca seluruh file yang diunggah ke dalam bentuk list bytes
                     list_file_bytes = [f.read() for f in uploaded_files]
-                    
-                    # Mengirimkan list dokumen + rubrik + siklus_proper ke Mesin Evaluasi
                     hasil = run_gemini_audit(list_file_bytes, active_rubric, siklus_proper)
                     skor_didapat = float(hasil.get('skor', 0.0))
                     
-                    # Simpan skor ke memori tabulasi
                     kunci_skor = f"{jenis_dokumen}_{kategori}_{selected_no}"
                     st.session_state.skor_tabulasi[kunci_skor] = skor_didapat
 
                     st.markdown("---")
                     st.markdown("### 📊 Hasil Analisis Asesor AI")
                     
-                    # Layout Kolom untuk Hasil
                     col_score, col_desc = st.columns([1.5, 3])
                     
-                    # Render Kartu Skor (Hijau jika dapet nilai, Merah jika 0)
                     with col_score:
                         card_class = "score-card-green" if skor_didapat > 0 else "score-card-red"
                         st.markdown(f"""
@@ -294,8 +332,6 @@ else:
                         st.success(hasil.get('bukti_dokumen', 'Lokasi tidak ditemukan.'))
 
                     st.markdown("#### 💡 Alasan & Catatan Penilaian:")
-                    
-                    # Gunakan warning (kuning) jika nilainya 0, info (biru) jika nilainya ada
                     if skor_didapat == 0.0:
                         st.warning(hasil.get('alasan_penilaian', 'Alasan tidak diberikan.'))
                     else:
