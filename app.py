@@ -124,13 +124,20 @@ st.set_page_config(page_title="Sistem Asesmen PROPER Hijau", layout="wide", page
 # ==========================================
 st.markdown("""
     <style>
-    /* --- MENGHILANGKAN MENU BAWAAN STREAMLIT (White-label) --- */
+    /* --- MENGHILANGKAN MENU & BADGE BAWAAN STREAMLIT (White-label) --- */
     #MainMenu {visibility: hidden;}
     header {visibility: hidden;}
     footer {visibility: hidden;}
     .stDeployButton {display:none;}
     [data-testid="stToolbar"] {visibility: hidden !important;}
     [data-testid="stDecoration"] {visibility: hidden !important;}
+    
+    /* MENGHAPUS LOGO MERAH & STATUS HIJAU DI POJOK KANAN BAWAH */
+    [data-testid="stStatusWidget"] {display: none !important; visibility: hidden !important;}
+    [data-testid="stViewerBadge"] {display: none !important; visibility: hidden !important;}
+    a[href^="https://streamlit.io"] {display: none !important;}
+    iframe[src^="https://streamlit.io"] {display: none !important;}
+    .viewerBadge_container__1QSob {display: none !important;}
     
     /* Header Card Hijau Emas (Presisi mengikuti lebar kolom) */
     .header-card {
@@ -280,7 +287,7 @@ if not st.session_state.user_logged_in:
     col_space1, col_form, col_space2 = st.columns([1.2, 2, 1.2])
 
     with col_form:
-        # Header Kustom Hijau-Emas (Sekarang berada di dalam col_form yang sama dengan form)
+        # Header Kustom Hijau-Emas
         st.markdown("""
             <div class="header-card">
                 <h1>🌿 Sistem Asesmen PROPER Hijau KLH</h1>
