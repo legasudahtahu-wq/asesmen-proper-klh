@@ -46,15 +46,6 @@ def clean_text_for_json(text):
     text = re.sub(r'[\x00-\x1f\x7f-\x9f]', ' ', text)
     return text.replace('"', "'").replace('\\', '/')
 
-def get_fast_models():
-    """Daftar model gratis terprioritas yang paling CEPAT & RINGAN"""
-    return [
-        "google/gemini-2.0-flash-lite-preview-02-05:free",
-        "google/gemini-2.0-flash-exp:free",
-        "qwen/qwen-2.5-coder-32b-instruct:free",
-        "meta-llama/llama-3.1-8b-instruct:free"
-    ]
-
 def run_gemini_audit(list_file_bytes, rubric_data, siklus_proper="2025/2026"):
     openrouter_api_key = os.getenv("OPENROUTER_API_KEY") 
 
@@ -74,7 +65,7 @@ def run_gemini_audit(list_file_bytes, rubric_data, siklus_proper="2025/2026"):
         if HAS_PYPDF:
             try:
                 reader = pypdf.PdfReader(io.BytesIO(f_bytes))
-                max_pages = min(len(reader.pages), 50) 
+                max_pages = min(len(reader.pages), 60) 
                 for i in range(max_pages):
                     extracted = reader.pages[i].extract_text()
                     if extracted: doc_text += f"\n=== [DOKUMEN {idx+1} | HALAMAN {i+1}] ===\n" + extracted
@@ -87,10 +78,10 @@ def run_gemini_audit(list_file_bytes, rubric_data, siklus_proper="2025/2026"):
         if len(doc_text.strip()) < 100 and HAS_FITZ:
             try:
                 pdf_doc = fitz.open(stream=f_bytes, filetype="pdf")
-                max_img_pages = min(len(pdf_doc), 10) 
+                max_img_pages = min(len(pdf_doc), 15) 
                 for i in range(max_img_pages):
                     page = pdf_doc.load_page(i)
-                    pix = page.get_pixmap(matrix=fitz.Matrix(0.5, 0.5)) 
+                    pix = page.get_pixmap(matrix=fitz.Matrix(0.6, 0.6)) 
                     img_bytes = pix.tobytes("jpeg")
                     base64_img = base64.b64encode(img_bytes).decode('utf-8')
                     base64_images.append(base64_img)
@@ -98,7 +89,7 @@ def run_gemini_audit(list_file_bytes, rubric_data, siklus_proper="2025/2026"):
                 pass
 
     pdf_text = clean_text_for_json(pdf_text)
-    safe_pdf_text = pdf_text[:100000] # Potong maksimal 100rb karakter agar super cepat
+    safe_pdf_text = pdf_text[:150000] 
 
     # --- PROTEKSI PENTING: JIKA TEKS & GAMBAR KOSONG ---
     if not safe_pdf_text.strip() and not base64_images:
@@ -151,11 +142,16 @@ OUTPUT WAJIB (Format JSON Murni):
             "alasan_penilaian": "API Key OpenRouter tidak ditemukan di dalam sistem environment."
         })
 
-    # Cukup ambil 3 model cepat
-    models_to_try = get_fast_models()[:3]
+    # --- INI ADALAH DAFTAR MODEL BERBAYAR SUPER CEPAT & PINTAR ---
+    PAID_MODELS = [
+        "google/gemini-2.0-flash-001",
+        "openai/gpt-4o-mini",
+        "meta-llama/llama-3.3-70b-instruct"
+    ]
+    
     last_error = ""
 
-    for model_name in models_to_try:
+    for model_name in PAID_MODELS:
         payload = {
             "model": model_name,
             "messages": [{"role": "user", "content": content_array}]
@@ -165,13 +161,13 @@ OUTPUT WAJIB (Format JSON Murni):
             "Authorization": f"Bearer {openrouter_api_key}",
             "Content-Type": "application/json",
             "HTTP-Referer": "https://asesmen-proper-klh.streamlit.app", 
-            "X-Title": "PROPER AI"
+            "X-Title": "PROPER AI Enterprise"
         }
         req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions", data=json_data, headers=headers, method="POST")
 
         try:
-            # TIMEOUT DIPERKETAT HANYA 8 DETIK PER MODEL
-            with urllib.request.urlopen(req, timeout=8) as response:
+            # Menggunakan jalur VIP berbayar (Batas tunggu 15 detik, tapi biasanya selesai dalam 3 detik)
+            with urllib.request.urlopen(req, timeout=15) as response:
                 res_body = response.read().decode('utf-8')
                 res_json = json.loads(res_body)
                 raw_text = res_json['choices'][0]['message']['content'].strip()
@@ -182,7 +178,7 @@ OUTPUT WAJIB (Format JSON Murni):
                 parsed = json.loads(raw_text.strip())
                 if isinstance(parsed, list) and len(parsed) > 0: parsed = parsed[0]
                 
-                via_text = f"(Via {model_name} - Fast Mode)"
+                via_text = f"(Via {model_name} - Enterprise Mode)"
 
                 return UniversalSmartDict({
                     "no": rubric_data['no'],
@@ -191,7 +187,8 @@ OUTPUT WAJIB (Format JSON Murni):
                     "alasan_penilaian": f"{via_text}\n\n" + str(parsed.get('alasan_penilaian', 'Evaluasi selesai.'))
                 })
         except urllib.error.HTTPError as e:
-            last_error = f"Model {model_name} HTTP {e.code}"
+            err_msg = e.read().decode('utf-8')
+            last_error = f"Model {model_name} HTTP {e.code}: {err_msg}"
             continue 
         except Exception as e:
             last_error = f"Model {model_name} Timeout/Error: {str(e)}"
@@ -199,6 +196,6 @@ OUTPUT WAJIB (Format JSON Murni):
 
     return UniversalSmartDict({
         "skor": 0.0,
-        "bukti_dokumen": "Koneksi AI Lambat.",
-        "alasan_penilaian": f"Layanan AI gratisan sedang mengalami antrean padat di server. {last_error}"
+        "bukti_dokumen": "Koneksi AI Terputus.",
+        "alasan_penilaian": f"Gagal memproses melalui layanan berbayar. Error: {last_error}"
     })
