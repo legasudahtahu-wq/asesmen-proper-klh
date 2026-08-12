@@ -1,3 +1,104 @@
+import os
+import json
+import urllib.request
+import urllib.error
+
+# Memuat file .env jika diuji secara lokal
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "").strip()
+
+def register_user(nama, perusahaan, email, password):
+    """Mendaftarkan user baru ke Supabase Auth & Tabel Profiles (Status default: pending)"""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return False, "Kredensial Supabase belum diatur di sistem."
+
+    # 1. Daftar ke Supabase Auth
+    signup_url = f"{SUPABASE_URL}/auth/v1/signup"
+    payload_auth = json.dumps({"email": email, "password": password}).encode('utf-8')
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Content-Type": "application/json"
+    }
+
+    req_auth = urllib.request.Request(signup_url, data=payload_auth, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req_auth) as res:
+            res_data = json.loads(res.read().decode('utf-8'))
+            user_id = res_data.get('user', {}).get('id') or res_data.get('id')
+
+            if not user_id:
+                return False, "Pendaftaran gagal. Pastikan email belum pernah terdaftar."
+
+            # 2. Simpan Data ke Tabel Profiles (status: pending)
+            profile_url = f"{SUPABASE_URL}/rest/v1/profiles"
+            payload_profile = json.dumps({
+                "id": user_id,
+                "nama": nama,
+                "nama_perusahaan": perusahaan,
+                "email": email,
+                "status": "pending"
+            }).encode('utf-8')
+
+            req_profile = urllib.request.Request(profile_url, data=payload_profile, headers=headers, method="POST")
+            with urllib.request.urlopen(req_profile) as res_p:
+                return True, "✅ Registrasi berhasil! Akun Anda berstatus 'PENDING'. Silakan hubungi Admin/Developer untuk persetujuan (Approval)."
+
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode('utf-8')
+        if "User already registered" in err_body:
+            return False, "Email ini sudah terdaftar. Silakan lakukan Login."
+        return False, f"Gagal mendaftar: {err_body}"
+    except Exception as e:
+        return False, f"Terjadi kesalahan: {str(e)}"
+
+def login_user(email, password):
+    """Verifikasi email & password, lalu periksa status persetujuan dari Admin"""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return False, "Kredensial Supabase belum diatur di sistem.", None
+
+    # 1. Autentikasi User
+    login_url = f"{SUPABASE_URL}/auth/v1/token?grant_type=password"
+    payload = json.dumps({"email": email, "password": password}).encode('utf-8')
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Content-Type": "application/json"
+    }
+
+    req = urllib.request.Request(login_url, data=payload, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req) as res:
+            res_data = json.loads(res.read().decode('utf-8'))
+            user_id = res_data.get('user', {}).get('id')
+
+            # 2. Cek Status Approval di Tabel Profiles
+            profile_url = f"{SUPABASE_URL}/rest/v1/profiles?id=eq.{user_id}&select=*"
+            req_profile = urllib.request.Request(profile_url, headers=headers, method="GET")
+
+            with urllib.request.urlopen(req_profile) as res_p:
+                profiles = json.loads(res_p.read().decode('utf-8'))
+                if not profiles:
+                    return False, "Profil user tidak ditemukan di database.", None
+
+                user_profile = profiles[0]
+                status = user_profile.get('status', 'pending')
+
+                if status.lower() == 'approved':
+                    return True, "Login Berhasil!", user_profile
+                else:
+                    return False, f"🔒 Akun Anda masih berstatus '{status.upper()}'. Akses belum dibuka oleh Admin.", None
+
+    except urllib.error.HTTPError as e:
+        return False, "Email atau password yang Anda masukkan salah.", None
+    except Exception as e:
+        return False, f"Terjadi kesalahan login: {str(e)}", None
+
+
 import streamlit as st
 import sys
 import os
@@ -5,7 +106,6 @@ import os
 # Menyambungkan logika dan data
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 from modules.audit_engine import run_gemini_audit
-from modules.auth_system import register_user, login_user
 from kriteria_data import DATA_PROPER
 
 # --- KONFIGURASI STATE MEMORI ---
@@ -30,11 +130,38 @@ st.markdown("""
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     
-    /* Styling Header Utama */
+    /* Header Card Hijau Emas (Presisi mengikuti lebar kolom) */
+    .header-card {
+        background: linear-gradient(135deg, #064E3B 0%, #047857 100%);
+        padding: 2.25rem 1.5rem;
+        border-radius: 20px;
+        color: white;
+        box-shadow: 0 10px 25px -5px rgba(6, 78, 59, 0.25);
+        border-bottom: 5px solid #D97706; /* Emas */
+        margin-bottom: 1.5rem;
+        text-align: center;
+        width: 100%;
+    }
+    .header-card h1 {
+        font-size: 1.75rem;
+        font-weight: 800;
+        margin: 0;
+        color: #FFFFFF;
+        letter-spacing: -0.5px;
+        line-height: 1.25;
+    }
+    .header-subtitle {
+        font-size: 0.85rem;
+        color: #A7F3D0;
+        margin-top: 0.6rem;
+        font-weight: 400;
+    }
+    
+    /* Styling Header Utama Setelah Login */
     .main-header {
         font-size: 2.2rem;
         font-weight: 800;
-        color: #1E3A8A; /* Biru Tua Elegan */
+        color: #064E3B;
         padding-bottom: 0px;
         margin-bottom: 0px;
     }
@@ -121,15 +248,22 @@ st.markdown("""
         line-height: 1;
     }
     
+    /* Tombol Utama (Hijau Emas) */
     .stButton>button {
         border-radius: 8px;
         font-weight: 600;
         transition: all 0.3s ease;
         padding: 10px 24px;
+        background: linear-gradient(135deg, #047857 0%, #065F46 100%);
+        color: #FFFFFF;
+        border: 1px solid #D97706; /* Accent Emas Halus */
     }
     .stButton>button:hover {
         transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        box-shadow: 0 4px 12px rgba(217,119,6,0.3);
+        background: linear-gradient(135deg, #B45309 0%, #D97706 100%);
+        color: #FFFFFF;
+        border-color: #F59E0B;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -139,22 +273,28 @@ st.markdown("""
 # GATEKEEPER: HALAMAN AUTHENTICATION (LOGIN & REGISTRASI)
 # ==========================================
 if not st.session_state.user_logged_in:
-    st.markdown('<div class="main-header">🌿 Sistem Asesmen - PROPER Hijau KLH</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Silakan masuk atau mendaftar akun untuk mengakses sistem</div>', unsafe_allow_html=True)
-    st.markdown("---")
+    
+    # Menggunakan rasio [1.2, 2, 1.2] agar kotak di tengah tampil sangat proporsional & elegan
+    col_space1, col_form, col_space2 = st.columns([1.2, 2, 1.2])
 
-    col1, col2, col3 = st.columns([1, 2, 1])
+    with col_form:
+        # Header Kustom Hijau-Emas (Sekarang berada di dalam col_form yang sama dengan form)
+        st.markdown("""
+            <div class="header-card">
+                <h1>🌿 Sistem Asesmen PROPER Hijau KLH</h1>
+                <p class="header-subtitle">Silakan login atau mendaftar akun untuk mengakses sistem</p>
+            </div>
+        """, unsafe_allow_html=True)
 
-    with col2:
-        tab_login, tab_register = st.tabs(["🔐 Masuk (Login)", "📝 Pendaftaran Akun Baru"])
+        tab_login, tab_register = st.tabs(["🔒 Login", "📝 Pendaftaran Akun Baru"])
 
         # TAB LOGIN
         with tab_login:
-            st.subheader("Login Asesor / Perusahaan")
-            email_login = st.text_input("Email", key="login_email")
-            pass_login = st.text_input("Password", type="password", key="login_pass")
+            st.markdown("### Login Asesor / Perusahaan")
+            email_login = st.text_input("Alamat Email", key="login_email", placeholder="nama@perusahaan.com")
+            pass_login = st.text_input("Password", type="password", key="login_pass", placeholder="••••••••")
 
-            if st.button("🚀 Masuk Sistem", type="primary", use_container_width=True):
+            if st.button("🔑 Login Sistem", use_container_width=True):
                 if not email_login or not pass_login:
                     st.warning("Mohon isi Email dan Password!")
                 else:
@@ -170,11 +310,11 @@ if not st.session_state.user_logged_in:
 
         # TAB REGISTRASI
         with tab_register:
-            st.subheader("Form Pendaftaran Akun Baru")
-            nama_reg = st.text_input("Nama Lengkap Pengguna", key="reg_nama")
-            pt_reg = st.text_input("Nama Perusahaan / Instansi", key="reg_pt")
-            email_reg = st.text_input("Alamat Email", key="reg_email")
-            pass_reg = st.text_input("Password Baru", type="password", key="reg_pass")
+            st.markdown("### Form Pendaftaran Akun Baru")
+            nama_reg = st.text_input("Nama Lengkap Pengguna", key="reg_nama", placeholder="Contoh: Budi Santoso")
+            pt_reg = st.text_input("Nama Perusahaan / Instansi", key="reg_pt", placeholder="Contoh: PT Berkah Jaya")
+            email_reg = st.text_input("Alamat Email", key="reg_email", placeholder="nama@perusahaan.com")
+            pass_reg = st.text_input("Password Baru", type="password", key="reg_pass", placeholder="••••••••")
 
             if st.button("📩 Daftar Sekarang", use_container_width=True):
                 if not nama_reg or not pt_reg or not email_reg or not pass_reg:
@@ -186,6 +326,14 @@ if not st.session_state.user_logged_in:
                             st.success(msg)
                         else:
                             st.error(msg)
+                            
+    # Footer Kustom
+    st.markdown("""
+        <div style="text-align: center; margin-top: 3.5rem; font-size: 0.75rem; color: #64748B; border-top: 1px solid #E2E8F0; padding-top: 1.5rem; line-height: 1.6;">
+            Dikembangkan oleh <strong>Shared Value Indonesia</strong> © 2026<br>
+            Platform Sistem Asesmen Kinerja Pengelolaan Lingkungan Perusahaan (PROPER Hijau).
+        </div>
+    """, unsafe_allow_html=True)
 
     st.stop() # Hentikan eksekusi di sini jika belum login
 
@@ -203,7 +351,7 @@ st.markdown("---")
 st.sidebar.title("👤 Profil Pengguna")
 st.sidebar.info(f"**{st.session_state.user_info.get('nama')}**\n\n🏢 {st.session_state.user_info.get('nama_perusahaan')}")
 
-if st.sidebar.button("🚪 Keluar (Logout)", use_container_width=True):
+if st.sidebar.button("🚪 Logout", use_container_width=True):
     st.session_state.user_logged_in = False
     st.session_state.user_info = None
     st.session_state.skor_tabulasi = {}
