@@ -124,22 +124,37 @@ st.set_page_config(page_title="Sistem Asesmen PROPER Hijau", layout="wide", page
 # ==========================================
 st.markdown("""
     <style>
-    /* --- MENGHILANGKAN MENU & BADGE BAWAAN STREAMLIT (White-label) --- */
-    #MainMenu {visibility: hidden;}
-    header {visibility: hidden;}
-    footer {visibility: hidden;}
-    .stDeployButton {display:none;}
-    [data-testid="stToolbar"] {visibility: hidden !important;}
-    [data-testid="stDecoration"] {visibility: hidden !important;}
+    /* --- SENJATA PAMUNGKAS: MENGHAPUS SEMUA ATRIBUSI STREAMLIT --- */
     
-    /* MENGHAPUS LOGO MERAH & STATUS HIJAU DI POJOK KANAN BAWAH */
-    [data-testid="stStatusWidget"] {display: none !important; visibility: hidden !important;}
-    [data-testid="stViewerBadge"] {display: none !important; visibility: hidden !important;}
-    a[href^="https://streamlit.io"] {display: none !important;}
-    iframe[src^="https://streamlit.io"] {display: none !important;}
-    .viewerBadge_container__1QSob {display: none !important;}
+    /* 1. Hapus Header, Footer, Menu Kanan Atas */
+    #MainMenu, header, footer, .stDeployButton, 
+    [data-testid="stToolbar"], [data-testid="stDecoration"] {
+        visibility: hidden !important; 
+        display: none !important;
+    }
     
-    /* Header Card Hijau Emas (Presisi mengikuti lebar kolom) */
+    /* 2. Hapus Paksa Logo Merah & Ikon Hijau di Kanan Bawah */
+    [data-testid="stStatusWidget"], 
+    [data-testid="stViewerBadge"], 
+    div[class^="viewerBadge"] {
+        visibility: hidden !important; 
+        display: none !important; 
+        opacity: 0 !important;
+        pointer-events: none !important;
+    }
+    
+    /* 3. Blokir semua tautan ke situs Streamlit (Metode Sapu Bersih) */
+    a[href*="streamlit.io"] {
+        display: none !important;
+        visibility: hidden !important;
+    }
+    
+    /* 4. Mencegah spasi kosong bekas logo di bagian bawah layar */
+    .stApp > div:last-child:not([class]) {
+        display: none !important;
+    }
+
+    /* --- STYLING UI APLIKASI (TETAP SAMA) --- */
     .header-card {
         background: linear-gradient(135deg, #064E3B 0%, #047857 100%);
         padding: 2.25rem 1.5rem;
@@ -166,7 +181,6 @@ st.markdown("""
         font-weight: 400;
     }
     
-    /* Styling Header Utama Setelah Login */
     .main-header {
         font-size: 2.2rem;
         font-weight: 800;
@@ -181,7 +195,6 @@ st.markdown("""
         margin-bottom: 20px;
     }
     
-    /* FITUR: MENGUBAH RADIO BUTTON MENJADI SCROLLABLE & STRICT 1 KOLOM */
     [data-testid="stSidebar"] [role="radiogroup"] {
         max-height: 300px;
         overflow-y: auto;
@@ -202,7 +215,6 @@ st.markdown("""
         margin-right: 0 !important;
     }
 
-    /* FITUR: MENGUBAH TABULASI SKOR MENJADI SCROLLABLE */
     .score-scroll-container {
         max-height: 250px;
         overflow-y: auto;
@@ -220,13 +232,11 @@ st.markdown("""
         border-bottom: none;
     }
 
-    /* Styling Scrollbar */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
     ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     
-    /* Kartu Hasil Penilaian */
     .score-card-green {
         background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
         border-left: 6px solid #22c55e;
@@ -257,7 +267,6 @@ st.markdown("""
         line-height: 1;
     }
     
-    /* Tombol Utama (Hijau Emas) */
     .stButton>button {
         border-radius: 8px;
         font-weight: 600;
