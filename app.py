@@ -2,6 +2,8 @@ import os
 import json
 import urllib.request
 import urllib.error
+import streamlit as st
+import sys
 
 # Memuat file .env jika diuji secara lokal
 try:
@@ -99,10 +101,6 @@ def login_user(email, password):
         return False, f"Terjadi kesalahan login: {str(e)}", None
 
 
-import streamlit as st
-import sys
-import os
-
 # Menyambungkan logika dan data
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 from modules.audit_engine import run_gemini_audit
@@ -126,9 +124,13 @@ st.set_page_config(page_title="Sistem Asesmen PROPER Hijau", layout="wide", page
 # ==========================================
 st.markdown("""
     <style>
-    /* Sembunyikan menu bawaan Streamlit untuk kesan aplikasi mandiri */
+    /* --- MENGHILANGKAN MENU BAWAAN STREAMLIT (White-label) --- */
     #MainMenu {visibility: hidden;}
+    header {visibility: hidden;}
     footer {visibility: hidden;}
+    .stDeployButton {display:none;}
+    [data-testid="stToolbar"] {visibility: hidden !important;}
+    [data-testid="stDecoration"] {visibility: hidden !important;}
     
     /* Header Card Hijau Emas (Presisi mengikuti lebar kolom) */
     .header-card {
