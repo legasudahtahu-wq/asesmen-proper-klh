@@ -6,7 +6,7 @@ import io
 import re
 import base64
 
-# Memuat file .env (Sangat penting agar kunci rahasia terbaca)
+# Memuat file .env (Sangat penting agar kunci rahasia terbaca di lokal)
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -47,30 +47,39 @@ def clean_text_for_json(text):
     return text.replace('"', "'").replace('\\', '/')
 
 def get_live_free_models(api_key):
-    url = "https://openrouter.ai/api/v1/models"
-    if not api_key:
-        return ["google/gemini-2.0-flash-lite-preview-02-05:free"]
+    """Mengambil daftar model gratis yang HANYA berkualitas tinggi untuk audit"""
+    PREFERRED_MODELS = [
+        "google/gemini-2.0-flash-exp:free",
+        "google/gemini-2.0-flash-lite-preview-02-05:free",
+        "qwen/qwen-2.5-72b-instruct:free",
+        "meta-llama/llama-3.3-70b-instruct:free"
+    ]
     
+    if not api_key:
+        return PREFERRED_MODELS
+
+    url = "https://openrouter.ai/api/v1/models"
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {api_key}"})
     try:
-        with urllib.request.urlopen(req) as response:
+        with urllib.request.urlopen(req, timeout=5) as response:
             data = json.loads(response.read().decode('utf-8'))
             free_models = [m.get('id') for m in data.get('data', []) if m.get('id', '').endswith(':free')]
             
-            vision_models = [m for m in free_models if any(x in m.lower() for x in ['gemini', 'pixtral', 'llama-3.2-90b', 'qwen'])]
-            others = [m for m in free_models if m not in vision_models]
+            # Filter HANYA model besar/cerdas, BUANG model kecil/lambat seperti liquid/lfm
+            valid_models = [
+                m for m in free_models 
+                if any(x in m.lower() for x in ['gemini', 'qwen-2.5-72b', 'llama-3.3-70b', 'pixtral'])
+                and not any(y in m.lower() for y in ['liquid', 'micro', '1b', '2b', '3b'])
+            ]
             
-            combined = vision_models + others
-            return combined if combined else ["google/gemini-2.0-flash-lite-preview-02-05:free"]
+            combined = [m for m in PREFERRED_MODELS if m in valid_models] + [m for m in valid_models if m not in PREFERRED_MODELS]
+            return combined if combined else PREFERRED_MODELS
     except Exception:
-        return ["google/gemini-2.0-flash-lite-preview-02-05:free"]
+        return PREFERRED_MODELS
 
-# === PENAMBAHAN PARAMETER KE-3 (siklus_proper) DI SINI ===
 def run_gemini_audit(list_file_bytes, rubric_data, siklus_proper="2025/2026"):
-    # Memanggil kunci dari brankas rahasia (.env atau sistem server)
     openrouter_api_key = os.getenv("OPENROUTER_API_KEY") 
 
-    # --- Kalkulasi Tahun untuk Jangkar Waktu Audit ---
     try:
         tahun_akhir = int(siklus_proper.split("/")[1])
     except Exception:
@@ -80,10 +89,10 @@ def run_gemini_audit(list_file_bytes, rubric_data, siklus_proper="2025/2026"):
     pdf_text = ""
     base64_images = []
 
-    # Memproses BANYAK FILE sekaligus
+    # Memproses SELURUH FILE yang diunggah
     for idx, f_bytes in enumerate(list_file_bytes):
         doc_text = ""
-        # 1. BACA TEKS MURNI
+        # 1. BACA TEKS MURNI (PyPDF)
         if HAS_PYPDF:
             try:
                 reader = pypdf.PdfReader(io.BytesIO(f_bytes))
@@ -96,11 +105,11 @@ def run_gemini_audit(list_file_bytes, rubric_data, siklus_proper="2025/2026"):
 
         pdf_text += doc_text
         
-        # 2. BACA DOKUMEN SCAN (Jika khusus file INI tidak ada teksnya)
+        # 2. BACA DOKUMEN SCAN / GAMBAR (PyMuPDF / Fitz)
         if len(doc_text.strip()) < 100 and HAS_FITZ:
             try:
                 pdf_doc = fitz.open(stream=f_bytes, filetype="pdf")
-                max_img_pages = min(len(pdf_doc), 25) 
+                max_img_pages = min(len(pdf_doc), 15) 
                 for i in range(max_img_pages):
                     page = pdf_doc.load_page(i)
                     pix = page.get_pixmap(matrix=fitz.Matrix(0.6, 0.6)) 
@@ -111,9 +120,18 @@ def run_gemini_audit(list_file_bytes, rubric_data, siklus_proper="2025/2026"):
                 pass
 
     pdf_text = clean_text_for_json(pdf_text)
-    safe_pdf_text = pdf_text[:200000]
+    safe_pdf_text = pdf_text[:150000]
 
-    # === UPDATE: PROMPT DENGAN JANGKAR WAKTU & HARD-GATE ===
+    # --- PROTEKSI PENTING: JIKA TEKS & GAMBAR KOSONG ---
+    if not safe_pdf_text.strip() and not base64_images:
+        return UniversalSmartDict({
+            "no": rubric_data['no'],
+            "skor": 0.0,
+            "bukti_dokumen": "Gagal membaca isi dokumen PDF.",
+            "alasan_penilaian": "⚠️ Konten dari dokumen tidak dapat diekstrak. Mohon pastikan file PDF bukan file yang dipasangi password atau berupa file yang rusak."
+        })
+
+    # PROMPT AUDIT PROPER
     single_prompt = f"""Anda adalah Auditor Ahli PROPER Kementerian Lingkungan Hidup dan Kehutanan (KLHK) RI.
 Tugas Anda adalah menilai secara obyektif dan kritis dokumen bukti perusahaan berdasarkan kriteria PROPER.
 (Terdapat {len(list_file_bytes)} dokumen bukti yang dilampirkan. Gabungkan informasi dari seluruh dokumen).
@@ -155,7 +173,6 @@ OUTPUT WAJIB (1 Object JSON Murni tanpa format markdown tambahan):
   "alasan_penilaian": "<Jelaskan rinci alasan skor, sebutkan kesesuaian tahun dan isi substansinya>"
 }}"""
 
-    # 3. SUSUN PAKET
     content_array = [{"type": "text", "text": single_prompt}]
     for b64 in base64_images:
         content_array.append({
@@ -167,10 +184,11 @@ OUTPUT WAJIB (1 Object JSON Murni tanpa format markdown tambahan):
         return UniversalSmartDict({
             "skor": 0.0,
             "bukti_dokumen": "Gagal terhubung.",
-            "alasan_penilaian": "API Key OpenRouter tidak ditemukan di dalam sistem. Pastikan file .env sudah diatur dengan benar."
+            "alasan_penilaian": "API Key OpenRouter tidak ditemukan di dalam sistem. Pastikan variabel OPENROUTER_API_KEY sudah diatur di Secrets Streamlit Cloud."
         })
 
-    models_to_try = get_live_free_models(openrouter_api_key)[:15]
+    # Hanya mencoba 4 model unggulan agar pemrosesan cepat (hitungan detik)
+    models_to_try = get_live_free_models(openrouter_api_key)[:4]
     last_error = ""
 
     for model_name in models_to_try:
@@ -182,13 +200,13 @@ OUTPUT WAJIB (1 Object JSON Murni tanpa format markdown tambahan):
         headers = {
             "Authorization": f"Bearer {openrouter_api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "http://localhost", 
+            "HTTP-Referer": "https://asesmen-proper-klh.streamlit.app", 
             "X-Title": "PROPER AI"
         }
         req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions", data=json_data, headers=headers, method="POST")
 
         try:
-            with urllib.request.urlopen(req) as response:
+            with urllib.request.urlopen(req, timeout=30) as response:
                 res_body = response.read().decode('utf-8')
                 res_json = json.loads(res_body)
                 raw_text = res_json['choices'][0]['message']['content'].strip()
@@ -199,7 +217,7 @@ OUTPUT WAJIB (1 Object JSON Murni tanpa format markdown tambahan):
                 parsed = json.loads(raw_text.strip())
                 if isinstance(parsed, list) and len(parsed) > 0: parsed = parsed[0]
                 
-                via_text = f"(Via {model_name} - Multi-File / Vision Mode 👁️)" if base64_images else f"(Via {model_name} - Multi-File)"
+                via_text = f"(Via {model_name} - Vision Mode 👁️)" if base64_images else f"(Via {model_name})"
 
                 return UniversalSmartDict({
                     "no": rubric_data['no'],
@@ -216,6 +234,6 @@ OUTPUT WAJIB (1 Object JSON Murni tanpa format markdown tambahan):
 
     return UniversalSmartDict({
         "skor": 0.0,
-        "bukti_dokumen": "Gagal terhubung.",
-        "alasan_penilaian": f"Semua model dicoba namun gagal/menolak. Error terakhir: {last_error}"
+        "bukti_dokumen": "Gagal terhubung ke AI.",
+        "alasan_penilaian": f"Pemeriksaan gagal. Keterangan error: {last_error}"
     })
