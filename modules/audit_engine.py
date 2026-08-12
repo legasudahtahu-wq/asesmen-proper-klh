@@ -47,35 +47,44 @@ def clean_text_for_json(text):
     return text.replace('"', "'").replace('\\', '/')
 
 def get_live_free_models(api_key):
-    """Mengambil daftar model gratis yang HANYA berkualitas tinggi untuk audit"""
-    PREFERRED_MODELS = [
-        "google/gemini-2.0-flash-exp:free",
-        "google/gemini-2.0-flash-lite-preview-02-05:free",
-        "qwen/qwen-2.5-72b-instruct:free",
-        "meta-llama/llama-3.3-70b-instruct:free"
-    ]
-    
-    if not api_key:
-        return PREFERRED_MODELS
-
+    """Mengambil daftar model GRATIS yang BENAR-BENAR AKTIF langsung dari API OpenRouter secara real-time"""
     url = "https://openrouter.ai/api/v1/models"
-    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {api_key}"})
+    headers = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    
+    req = urllib.request.Request(url, headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=5) as response:
+        with urllib.request.urlopen(req, timeout=10) as response:
             data = json.loads(response.read().decode('utf-8'))
-            free_models = [m.get('id') for m in data.get('data', []) if m.get('id', '').endswith(':free')]
+            models_data = data.get('data', [])
             
-            # Filter HANYA model besar/cerdas, BUANG model kecil/lambat seperti liquid/lfm
-            valid_models = [
+            # Ambil semua ID model yang berakhiran :free
+            free_models = [m.get('id') for m in models_data if m.get('id', '').endswith(':free')]
+            
+            # Prioritaskan model cerdas & saring model mikro/kecil yang tidak akurat
+            smart_models = [
                 m for m in free_models 
-                if any(x in m.lower() for x in ['gemini', 'qwen-2.5-72b', 'llama-3.3-70b', 'pixtral'])
+                if any(x in m.lower() for x in ['gemini', 'qwen', 'deepseek', 'llama-3', 'mistral', 'pixtral'])
                 and not any(y in m.lower() for y in ['liquid', 'micro', '1b', '2b', '3b'])
             ]
             
-            combined = [m for m in PREFERRED_MODELS if m in valid_models] + [m for m in valid_models if m not in PREFERRED_MODELS]
-            return combined if combined else PREFERRED_MODELS
+            other_free = [m for m in free_models if m not in smart_models]
+            live_list = smart_models + other_free
+            
+            if live_list:
+                return live_list
     except Exception:
-        return PREFERRED_MODELS
+        pass
+
+    # Fallback cadangan jika API pembacaan daftar model dari OpenRouter sedang bermasalah
+    return [
+        "google/gemini-2.0-flash-lite-preview-02-05:free",
+        "google/gemini-2.0-pro-exp-02-05:free",
+        "deepseek/deepseek-r1:free",
+        "qwen/qwen-2.5-coder-32b-instruct:free",
+        "meta-llama/llama-3.1-8b-instruct:free"
+    ]
 
 def run_gemini_audit(list_file_bytes, rubric_data, siklus_proper="2025/2026"):
     openrouter_api_key = os.getenv("OPENROUTER_API_KEY") 
@@ -187,8 +196,8 @@ OUTPUT WAJIB (1 Object JSON Murni tanpa format markdown tambahan):
             "alasan_penilaian": "API Key OpenRouter tidak ditemukan di dalam sistem. Pastikan variabel OPENROUTER_API_KEY sudah diatur di Secrets Streamlit Cloud."
         })
 
-    # Hanya mencoba 4 model unggulan agar pemrosesan cepat (hitungan detik)
-    models_to_try = get_live_free_models(openrouter_api_key)[:4]
+    # Mengambil daftar model gratis yang sedang benar-benar live dari OpenRouter
+    models_to_try = get_live_free_models(openrouter_api_key)[:8]
     last_error = ""
 
     for model_name in models_to_try:
